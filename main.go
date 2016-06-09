@@ -266,7 +266,7 @@ func main() {
 	httpServerCommand := &cobra.Command{
 		Use:   "httpServer",
 		Short: "Sample HelloWorld HTTP server",
-		Long:  `Custom command `,
+		Long:  `Sample HelloWorld HTTP server that binds to port: ` + HTTPServerPort,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			http.HandleFunc("/", helloWorldResource)
 			return http.ListenAndServe(fmt.Sprintf(":%d", HTTPServerPort), nil)
