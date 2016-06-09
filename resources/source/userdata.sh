@@ -10,7 +10,6 @@ if [ ! -f "/home/ubuntu/userdata.sh" ]
 then
   curl -vs http://169.254.169.254/latest/user-data -o /home/ubuntu/userdata.sh
   chmod +x /home/ubuntu/userdata.sh
-  apt-get install supervisor -y
 fi
 
 # Install everything
