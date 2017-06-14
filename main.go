@@ -5,22 +5,24 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+
 	"github.com/Sirupsen/logrus"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	gocf "github.com/crewjam/go-cloudformation"
 	sparta "github.com/mweagle/Sparta"
 	spartaAWS "github.com/mweagle/Sparta/aws"
 	spartaCF "github.com/mweagle/Sparta/aws/cloudformation"
 	spartaIAM "github.com/mweagle/Sparta/aws/iam"
 	"github.com/mweagle/SpartaOmega/resources"
-	"io"
-	"net/http"
+	gocf "github.com/mweagle/go-cloudformation"
 
-	"github.com/spf13/cobra"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
 )
 
 // HTTPServerPort is the port the "HelloWorld" service binds to
@@ -128,7 +130,9 @@ func lambdaDecorator(customResourceAMILookupName string) sparta.TemplateDecorato
 		resourceMetadata map[string]interface{},
 		S3Bucket string,
 		S3Key string,
+		buildID string,
 		template *gocf.Template,
+		context map[string]interface{},
 		logger *logrus.Logger) error {
 
 		// Create the launch configuration with Metadata to download the ZIP file, unzip it & launch the
@@ -150,14 +154,14 @@ func lambdaDecorator(customResourceAMILookupName string) sparta.TemplateDecorato
 			GroupDescription: gocf.String("SpartaOmega Security Group"),
 			SecurityGroupIngress: &gocf.EC2SecurityGroupRuleList{
 				gocf.EC2SecurityGroupRule{
-					CidrIp:     gocf.String("0.0.0.0/0"),
-					IpProtocol: gocf.String("tcp"),
+					CidrIP:     gocf.String("0.0.0.0/0"),
+					IPProtocol: gocf.String("tcp"),
 					FromPort:   gocf.Integer(HTTPServerPort),
 					ToPort:     gocf.Integer(HTTPServerPort),
 				},
 				gocf.EC2SecurityGroupRule{
-					CidrIp:     gocf.String("0.0.0.0/0"),
-					IpProtocol: gocf.String("tcp"),
+					CidrIP:     gocf.String("0.0.0.0/0"),
+					IPProtocol: gocf.String("tcp"),
 					FromPort:   gocf.Integer(22),
 					ToPort:     gocf.Integer(22),
 				},
@@ -176,9 +180,9 @@ func lambdaDecorator(customResourceAMILookupName string) sparta.TemplateDecorato
 			Action:   []string{"s3:GetObject"},
 			Resource: gocf.String(fmt.Sprintf("arn:aws:s3:::%s/%s", S3Bucket, S3Key)),
 		})
-		iamPolicyList := gocf.IAMPoliciesList{}
+		iamPolicyList := gocf.IAMRolePolicyList{}
 		iamPolicyList = append(iamPolicyList,
-			gocf.IAMPolicies{
+			gocf.IAMRolePolicy{
 				PolicyDocument: sparta.ArbitraryJSONObject{
 					"Version":   "2012-10-17",
 					"Statement": statements,
@@ -195,7 +199,7 @@ func lambdaDecorator(customResourceAMILookupName string) sparta.TemplateDecorato
 		// Create the instance profile
 		ec2InstanceProfile := &gocf.IAMInstanceProfile{
 			Path:  gocf.String("/"),
-			Roles: []gocf.Stringable{gocf.Ref(ec2InstanceRoleName).String()},
+			Roles: gocf.StringList(gocf.Ref(ec2InstanceRoleName)),
 		}
 		template.AddResource(ec2InstanceProfileName, ec2InstanceProfile)
 
@@ -206,7 +210,8 @@ func lambdaDecorator(customResourceAMILookupName string) sparta.TemplateDecorato
 			"ServiceName": serviceName,
 		}
 
-		userDataTemplateInput, userDataTemplateInputErr := resources.FSString(false, "/resources/source/userdata.sh")
+		userDataTemplateInput, userDataTemplateInputErr := resources.FSString(false,
+			"/resources/source/userdata.sh")
 		if nil != userDataTemplateInputErr {
 			return userDataTemplateInputErr
 		}
@@ -221,7 +226,7 @@ func lambdaDecorator(customResourceAMILookupName string) sparta.TemplateDecorato
 		}).Debug("Expanded userdata")
 
 		asgLaunchConfigurationResource := &gocf.AutoScalingLaunchConfiguration{
-			ImageId:            gocf.GetAtt(customResourceAMILookupName, "HVM"),
+			ImageID:            gocf.GetAtt(customResourceAMILookupName, "HVM"),
 			InstanceType:       gocf.String("t2.micro"),
 			KeyName:            gocf.String(SSHKeyName),
 			IamInstanceProfile: gocf.Ref(ec2InstanceProfileName).String(),
