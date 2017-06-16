@@ -313,7 +313,8 @@ func main() {
 	var lambdaFunctions []*sparta.LambdaAWSInfo
 	lambdaFunctions = append(lambdaFunctions, lambdaFn)
 
-	err := sparta.Main("SpartaOmega",
+	stackName := spartaCF.UserScopedStackName("SpartaOmega")
+	err := sparta.Main(stackName,
 		fmt.Sprintf("Provision AWS Lambda and EC2 instance with same code"),
 		lambdaFunctions,
 		nil,
