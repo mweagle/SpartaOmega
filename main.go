@@ -152,14 +152,14 @@ func lambdaDecorator(customResourceAMILookupName string) sparta.TemplateDecorato
 		// 1 - Create the security group for the SpartaOmega EC2 instance
 		ec2SecurityGroup := &gocf.EC2SecurityGroup{
 			GroupDescription: gocf.String("SpartaOmega Security Group"),
-			SecurityGroupIngress: &gocf.EC2SecurityGroupRuleList{
-				gocf.EC2SecurityGroupRule{
+			SecurityGroupIngress: &gocf.EC2SecurityGroupIngressPropertyList{
+				gocf.EC2SecurityGroupIngressProperty{
 					CidrIP:     gocf.String("0.0.0.0/0"),
 					IPProtocol: gocf.String("tcp"),
 					FromPort:   gocf.Integer(HTTPServerPort),
 					ToPort:     gocf.Integer(HTTPServerPort),
 				},
-				gocf.EC2SecurityGroupRule{
+				gocf.EC2SecurityGroupIngressProperty{
 					CidrIP:     gocf.String("0.0.0.0/0"),
 					IPProtocol: gocf.String("tcp"),
 					FromPort:   gocf.Integer(22),
