@@ -3,24 +3,24 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
-	"io"
 	"net/http"
+	"os"
+	"strings"
+	"time"
 
-	"github.com/Sirupsen/logrus"
+	awsLambdaCtx "github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	sparta "github.com/mweagle/Sparta"
 	spartaAWS "github.com/mweagle/Sparta/aws"
 	spartaCF "github.com/mweagle/Sparta/aws/cloudformation"
+	spartaCFResources "github.com/mweagle/Sparta/aws/cloudformation/resources"
 	spartaIAM "github.com/mweagle/Sparta/aws/iam"
 	"github.com/mweagle/SpartaOmega/resources"
 	gocf "github.com/mweagle/go-cloudformation"
-
-	"os"
-	"strings"
-	"time"
+	"github.com/sirupsen/logrus"
 
 	"github.com/spf13/cobra"
 )
@@ -62,62 +62,73 @@ func mostRecentImageID(images []*ec2.Image) (string, error) {
 // outputs.  For this example we're going to look for the latest Ubuntu 16.04
 // release.
 // Ref: https://help.ubuntu.com/community/EC2StartersGuide#Official_Ubuntu_Cloud_Guest_Amazon_Machine_Images_.28AMIs.29
-func ubuntuAMICustomResource(requestType string,
-	stackID string,
-	properties map[string]interface{},
-	logger *logrus.Logger) (map[string]interface{}, error) {
-	if requestType != "Create" {
-		return map[string]interface{}{}, nil
+func ubuntuAMICustomResource(ctx context.Context,
+	event spartaCFResources.CloudFormationLambdaEvent) (map[string]interface{}, error) {
+	logger, _ := ctx.Value(sparta.ContextKeyLogger).(*logrus.Logger)
+
+	opResults := make(map[string]interface{})
+	var opErr error
+	if event.RequestType == "Create" {
+
+		// Setup the common filters
+		describeImageFilters := []*ec2.Filter{}
+		describeImageFilters = append(describeImageFilters, &ec2.Filter{
+			Name:   aws.String("name"),
+			Values: []*string{aws.String("*hvm-ssd/ubuntu-xenial-16.04-amd64-server*")},
+		})
+		describeImageFilters = append(describeImageFilters, &ec2.Filter{
+			Name:   aws.String("root-device-type"),
+			Values: []*string{aws.String("ebs")},
+		})
+		describeImageFilters = append(describeImageFilters, &ec2.Filter{
+			Name:   aws.String("architecture"),
+			Values: []*string{aws.String("x86_64")},
+		})
+		describeImageFilters = append(describeImageFilters, &ec2.Filter{
+			Name:   aws.String("virtualization-type"),
+			Values: []*string{aws.String("hvm")},
+		})
+
+		// Get the HVM AMIs
+		params := &ec2.DescribeImagesInput{
+			Filters: describeImageFilters,
+			Owners:  []*string{aws.String("099720109477")},
+		}
+		logger, _ := ctx.Value(sparta.ContextKeyLogger).(*logrus.Logger)
+		ec2Svc := ec2.New(spartaAWS.NewSession(logger))
+		describeImagesOutput, describeImagesOutputErr := ec2Svc.DescribeImages(params)
+		if nil != describeImagesOutputErr {
+			return nil, describeImagesOutputErr
+		}
+		logger.WithFields(logrus.Fields{
+			"DescribeImagesOutput":    describeImagesOutput,
+			"DescribeImagesOutputErr": describeImagesOutputErr,
+		}).Info("Results")
+
+		amiID, amiIDErr := mostRecentImageID(describeImagesOutput.Images)
+		if nil != amiIDErr {
+			return nil, amiIDErr
+		}
+
+		// Set the HVM type
+		opResults = map[string]interface{}{
+			"HVM": amiID,
+		}
+		logger.WithFields(logrus.Fields{
+			"Outputs": opResults,
+		}).Info("CustomResource outputs")
 	}
 
-	// Setup the common filters
-	describeImageFilters := []*ec2.Filter{}
-	describeImageFilters = append(describeImageFilters, &ec2.Filter{
-		Name:   aws.String("name"),
-		Values: []*string{aws.String("*hvm-ssd/ubuntu-xenial-16.04-amd64-server*")},
-	})
-	describeImageFilters = append(describeImageFilters, &ec2.Filter{
-		Name:   aws.String("root-device-type"),
-		Values: []*string{aws.String("ebs")},
-	})
-	describeImageFilters = append(describeImageFilters, &ec2.Filter{
-		Name:   aws.String("architecture"),
-		Values: []*string{aws.String("x86_64")},
-	})
-	describeImageFilters = append(describeImageFilters, &ec2.Filter{
-		Name:   aws.String("virtualization-type"),
-		Values: []*string{aws.String("hvm")},
-	})
-
-	// Get the HVM AMIs
-	params := &ec2.DescribeImagesInput{
-		Filters: describeImageFilters,
-		Owners:  []*string{aws.String("099720109477")},
+	lambdaCtx, _ := awsLambdaCtx.FromContext(ctx)
+	cfErr := spartaCFResources.SendCloudFormationResponse(lambdaCtx,
+		&event,
+		opResults,
+		opErr,
+		logger)
+	if opErr == nil {
+		opErr = cfErr
 	}
-	logger.Level = logrus.DebugLevel
-	ec2Svc := ec2.New(spartaAWS.NewSession(logger))
-	describeImagesOutput, describeImagesOutputErr := ec2Svc.DescribeImages(params)
-	if nil != describeImagesOutputErr {
-		return nil, describeImagesOutputErr
-	}
-	logger.WithFields(logrus.Fields{
-		"DescribeImagesOutput":    describeImagesOutput,
-		"DescribeImagesOutputErr": describeImagesOutputErr,
-	}).Info("Results")
-
-	amiID, amiIDErr := mostRecentImageID(describeImagesOutput.Images)
-	if nil != amiIDErr {
-		return nil, amiIDErr
-	}
-
-	// Set the HVM type
-	outputProps := map[string]interface{}{
-		"HVM": amiID,
-	}
-	logger.WithFields(logrus.Fields{
-		"Outputs": outputProps,
-	}).Info("CustomResource outputs")
-	return outputProps, nil
+	return opResults, opErr
 }
 
 // The CloudFormation template decorator that inserts all the other
@@ -205,9 +216,10 @@ func lambdaDecorator(customResourceAMILookupName string) sparta.TemplateDecorato
 
 		//Now setup the properties map, expand the userdata, and attach it...
 		userDataProps := map[string]interface{}{
-			"S3Bucket":    S3Bucket,
-			"S3Key":       S3Key,
-			"ServiceName": serviceName,
+			"S3Bucket":         S3Bucket,
+			"S3Key":            S3Key,
+			"SpartaBinaryName": sparta.SpartaBinaryName,
+			"ServiceName":      serviceName,
 		}
 
 		userDataTemplateInput, userDataTemplateInputErr := resources.FSString(false,
@@ -233,6 +245,7 @@ func lambdaDecorator(customResourceAMILookupName string) sparta.TemplateDecorato
 			UserData:           gocf.Base64(userDataExpression),
 			SecurityGroups:     gocf.StringList(gocf.GetAtt(ec2SecurityGroupResourceName, "GroupId")),
 		}
+
 		launchConfigResource := template.AddResource(asgLaunchConfigurationName,
 			asgLaunchConfigurationResource)
 		launchConfigResource.DependsOn = append(launchConfigResource.DependsOn,
@@ -252,15 +265,15 @@ func lambdaDecorator(customResourceAMILookupName string) sparta.TemplateDecorato
 	}
 }
 
-func helloWorldLambda(event *json.RawMessage,
-	context *sparta.LambdaContext,
-	w http.ResponseWriter,
-	logger *logrus.Logger) {
-	helloWorldResource(w, nil)
+func helloWorldLambda() (string, error) {
+	return "Hello world from SpartaOmega!", nil
 }
 
 func helloWorldResource(w http.ResponseWriter, r *http.Request) {
-	io.WriteString(w, "Hello world from SpartaOmega!")
+
+	r.Header.Set("Content-Type", "text/plain")
+	helloData, _ := helloWorldLambda()
+	fmt.Fprintf(w, helloData)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -287,9 +300,9 @@ func main() {
 		"SSH Key Name to use for EC2 instances")
 
 	// The primary lambda function
-	lambdaFn := sparta.NewLambda(sparta.IAMRoleDefinition{},
+	lambdaFn := sparta.HandleAWSLambda(sparta.LambdaName(helloWorldLambda),
 		helloWorldLambda,
-		nil)
+		sparta.IAMRoleDefinition{})
 
 	// Lambda custom resource to lookup the latest Ubuntu AMIs
 	iamRoleCustomResource := sparta.IAMRoleDefinition{}
@@ -308,8 +321,11 @@ func main() {
 		&customResourceLambdaOptions,
 		nil)
 
-	// Get the resource name and pass it to the decorator
-	lambdaFn.Decorator = lambdaDecorator(amiIDCustomResourceName)
+	defaultDecorator := lambdaDecorator(amiIDCustomResourceName)
+	lambdaFn.Decorators = []sparta.TemplateDecoratorHandler{
+		sparta.TemplateDecoratorHookFunc(defaultDecorator),
+	}
+
 	var lambdaFunctions []*sparta.LambdaAWSInfo
 	lambdaFunctions = append(lambdaFunctions, lambdaFn)
 

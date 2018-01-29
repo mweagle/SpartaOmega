@@ -1,8 +1,8 @@
 #!/bin/bash -xe
-SPARTA_OMEGA_BINARY_PATH=/home/ubuntu/{{ .ServiceName }}.lambda.amd64
+SPARTA_OMEGA_BINARY_PATH=/home/ubuntu/Sparta.lambda.amd64
 
 ################################################################################
-# 
+#
 # Tested on Ubuntu 16.04
 #
 # AMI: ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server-20160516.1 (ami-06b94666)
@@ -13,9 +13,9 @@ then
 fi
 
 # Install everything
-service supervisor stop || apt-get install supervisor -y
-apt-get update -y 
-apt-get upgrade -y 
+service supervisor stop
+apt-get update -y
+apt-get upgrade -y
 apt-get install supervisor awscli unzip git -y
 
 ################################################################################
@@ -29,7 +29,7 @@ chmod +x $SPARTA_OMEGA_BINARY_PATH
 # REF: http://supervisord.org/
 # Cleanout secondary directory
 mkdir -pv /etc/supervisor/conf.d
-  
+
 SPARTA_OMEGA_SUPERVISOR_CONF="[program:spartaomega]
 command=$SPARTA_OMEGA_BINARY_PATH httpServer
 numprocs=1
