@@ -1,5 +1,5 @@
 #!/bin/bash -xe
-SPARTA_OMEGA_BINARY_PATH=/home/ubuntu/Sparta.lambda.amd64
+SPARTA_OMEGA_BINARY_PATH=/home/ubuntu/{{.SpartaBinaryName}}
 
 ################################################################################
 #
