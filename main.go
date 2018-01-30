@@ -65,6 +65,7 @@ func mostRecentImageID(images []*ec2.Image) (string, error) {
 func ubuntuAMICustomResource(ctx context.Context,
 	event spartaCFResources.CloudFormationLambdaEvent) (map[string]interface{}, error) {
 	logger, _ := ctx.Value(sparta.ContextKeyLogger).(*logrus.Logger)
+	lambdaCtx, _ := awsLambdaCtx.FromContext(ctx)
 
 	opResults := make(map[string]interface{})
 	var opErr error
@@ -119,7 +120,6 @@ func ubuntuAMICustomResource(ctx context.Context,
 		}).Info("CustomResource outputs")
 	}
 
-	lambdaCtx, _ := awsLambdaCtx.FromContext(ctx)
 	cfErr := spartaCFResources.SendCloudFormationResponse(lambdaCtx,
 		&event,
 		opResults,
